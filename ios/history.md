@@ -1,6 +1,9 @@
 # Keyman for iPhone and iPad Version History
 
-## 2018-08-06 10.0.209 stable 
+## 2018-09-14 10.0.211 stable 
+* Removed network reachability notifications - faster launching prevents early abort (#1166)
+
+## 2018-08-06 10.0.210 stable 
 * Removed unnecessary UIFileSharingEnabled flag (#1087)
 
 ## 2018-08-03 10.0.208 stable 

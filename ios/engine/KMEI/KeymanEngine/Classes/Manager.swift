@@ -27,9 +27,6 @@ public enum KeyboardState {
 // Strings
 private let keyboardChangeHelpText = "Tap here to change keyboard"
 
-// URLs - used for reachability test
-private let keymanHostName = "api.keyman.com"
-
 // UI In-App Keyboard Constants
 /*
 These values are currently determined by the default keyboard size
@@ -108,7 +105,6 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
 
   private var downloadQueue: HTTPDownloader?
   private var sharedQueue: HTTPDownloader!
-  private var reachability: Reachability!
   private var didSynchronize = false
   private var didResizeToOrientation = false
   private var useSpecialFontForSubkeys = false
@@ -179,11 +175,6 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
     hold.minimumPressDuration = 0.5
     hold.delegate = self
     keymanWeb.view.addGestureRecognizer(hold)
-
-    reachability = Reachability(hostName: keymanHostName)
-    NotificationCenter.default.addObserver(self, selector: #selector(self.reachabilityChanged),
-                                           name: .reachabilityChanged, object: reachability)
-    reachability.startNotifier()
 
     /* HTTPDownloader only uses this for its delegate methods.  So long as we don't
      * set the queue running, this should be perfectly fine.
@@ -537,12 +528,12 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
       return
     }
 
-    guard reachability.currentReachabilityStatus() != NotReachable else {
-      let error = NSError(domain: "Keyman", code: 0,
-                          userInfo: [NSLocalizedDescriptionKey: "No internet connection"])
-      downloadFailed(forKeyboards: [keyboard], error: error)
-      return
-    }
+//    guard reachability.currentReachabilityStatus() != NotReachable else {
+//      let error = NSError(domain: "Keyman", code: 0,
+//                          userInfo: [NSLocalizedDescriptionKey: "No internet connection"])
+//      downloadFailed(forKeyboards: [keyboard], error: error)
+//      return
+//    }
 
     do {
       try FileManager.default.createDirectory(at: Storage.active.keyboardDir(forID: keyboardID),
@@ -590,12 +581,12 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
   /// - Parameters:
   ///   - url: URL to a JSON description of the keyboard
   public func downloadKeyboard(from url: URL) {
-    guard reachability.currentReachabilityStatus() != NotReachable else {
-      let error = NSError(domain: "Keyman", code: 0,
-                          userInfo: [NSLocalizedDescriptionKey: "No connection"])
-      downloadFailed(forKeyboards: [], error: error)
-      return
-    }
+//    guard reachability.currentReachabilityStatus() != NotReachable else {
+//      let error = NSError(domain: "Keyman", code: 0,
+//                          userInfo: [NSLocalizedDescriptionKey: "No connection"])
+//      downloadFailed(forKeyboards: [], error: error)
+//      return
+//    }
 
     guard let data = try? Data(contentsOf: url) else {
       let error = NSError(domain: "Keyman", code: 0,
@@ -650,11 +641,11 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
       return
     }
 
-    if reachability.currentReachabilityStatus() == NotReachable {
-      let error = NSError(domain: "Keyman", code: 0, userInfo: [NSLocalizedDescriptionKey: "No internet connection"])
-      downloadFailed(forKeyboards: installableKeyboards, error: error)
-      return
-    }
+//    if reachability.currentReachabilityStatus() == NotReachable {
+//      let error = NSError(domain: "Keyman", code: 0, userInfo: [NSLocalizedDescriptionKey: "No internet connection"])
+//      downloadFailed(forKeyboards: installableKeyboards, error: error)
+//      return
+//    }
 
     do {
       try FileManager.default.createDirectory(at: Storage.active.keyboardDir(forID: keyboard.id),
@@ -721,21 +712,6 @@ public class Manager: NSObject, HTTPDownloadDelegate, UIGestureRecognizerDelegat
       }
     }
     return nil
-  }
-
-  @objc func reachabilityChanged(_ notification: Notification) {
-    log.debug {
-      let reachStr: String
-      switch reachability.currentReachabilityStatus() {
-      case ReachableViaWiFi:
-        reachStr = "Reachable Via WiFi"
-      case ReachableViaWWAN:
-        reachStr = "Reachable Via WWan"
-      default:
-        reachStr = "Not Reachable"
-      }
-      return "Reachability changed to '\(reachStr)'"
-    }
   }
 
   // MARK: - HTTPDownloadDelegate methods
