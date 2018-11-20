@@ -74,6 +74,7 @@ public class KMKeyboardDownloaderActivity extends AppCompatActivity {
   private static String filename;
 
   private static ArrayList<KeyboardEventHandler.OnKeyboardDownloadEventListener> kbDownloadEventListeners = null;
+  private static DownloadTask downloadTask = null;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -154,7 +155,16 @@ public class KMKeyboardDownloaderActivity extends AppCompatActivity {
       if (showProgressDialog) {
         progressDialog = new ProgressDialog(context);
         progressDialog.setMessage(context.getString(R.string.downloading_keyboard));
-        progressDialog.setCancelable(false);
+        progressDialog.setCancelable(true);
+        progressDialog.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", new DialogInterface.OnClickListener() {
+
+          @Override
+          public void onClick(DialogInterface dialogInterface, int which) {
+            if (downloadTask != null) {
+              downloadTask.cancel(true);
+            }
+          }
+        });
         if (!((AppCompatActivity) context).isFinishing()) {
           progressDialog.show();
         } else {
@@ -372,8 +382,8 @@ public class KMKeyboardDownloaderActivity extends AppCompatActivity {
    * @param showProgressDialog
    */
   public static void download(final Context context, final boolean showProgressDialog) {
-
-    new DownloadTask(context, showProgressDialog).execute();
+    downloadTask = new DownloadTask(context, showProgressDialog);
+    downloadTask.execute();
   }
 
   public static boolean isCustom(String u) {
