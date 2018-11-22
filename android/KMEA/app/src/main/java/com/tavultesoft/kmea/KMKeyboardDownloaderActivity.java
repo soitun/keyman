@@ -350,6 +350,10 @@ public class KMKeyboardDownloaderActivity extends AppCompatActivity {
         }
       }
 
+      boolean spin = true;
+      while (spin) {
+        wait(500);
+      }
       return ret;
     }
 
