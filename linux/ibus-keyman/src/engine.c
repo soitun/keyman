@@ -34,7 +34,7 @@
 #include "keyman-service.h"
 #include "engine.h"
 
-#define Keyman_Pass_Backspace_To_IBus 254 // unused keycode to forward backspace back to ibus
+// #define Keyman_Pass_Backspace_To_IBus 254 // unused keycode to forward backspace back to ibus
 
 typedef struct _IBusKeymanEngine IBusKeymanEngine;
 typedef struct _IBusKeymanEngineClass IBusKeymanEngineClass;
@@ -179,15 +179,16 @@ static void read_context(IBusEngine *engine)
     IBusKeymanEngine *keyman = (IBusKeymanEngine *) engine;
     IBusText *text;
     gchar *surrounding_text;
-    guint cursor_pos, anchor_pos;
+    guint cursor_pos, anchor_pos, context_pos;
     km_kbp_context_item *context_items;
 
     if ((engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT) != 0)
     {
         g_message("reading context");
         ibus_engine_get_surrounding_text(engine, &text, &cursor_pos, &anchor_pos);
-        surrounding_text = g_utf8_substring(ibus_text_get_text(text), 0, cursor_pos);
-        g_message("new context is:%s", surrounding_text);
+        context_pos = anchor_pos < cursor_pos ? anchor_pos : cursor_pos;
+        surrounding_text = g_utf8_substring(ibus_text_get_text(text), 0, context_pos);
+        g_message("new context is:%s cursor:%d anchor:%d", surrounding_text, anchor_pos, cursor_pos);
         if (km_kbp_context_items_from_utf8(surrounding_text, &context_items) == KM_KBP_STATUS_OK) {
             km_kbp_context_set(km_kbp_state_context(keyman->state), context_items);
         }
@@ -383,11 +384,11 @@ static void forward_keysym(IBusKeymanEngine *engine, unsigned int keysym, unsign
     ibus_engine_forward_key_event((IBusEngine *)engine, keysym, keycode-8, state);
 }
 
-static void forward_keycode(IBusKeymanEngine *engine, unsigned char keycode, unsigned int state)
-{
-    g_debug("DAR: forward_keycode no keysym");
-    ibus_engine_forward_key_event((IBusEngine *)engine, 0, keycode, state);
-}
+// static void forward_keycode(IBusKeymanEngine *engine, unsigned char keycode, unsigned int state)
+// {
+//     g_debug("DAR: forward_keycode no keysym");
+//     ibus_engine_forward_key_event((IBusEngine *)engine, 0, keycode, state);
+// }
 
 
 // from android/KMEA/app/src/main/java/com/tavultesoft/kmea/KMHardwareKeyboardInterpreter.java
@@ -500,6 +501,16 @@ static void reset_context(IBusEngine *engine)
     read_context(engine);
 }
 
+static gboolean ok_for_single_backspace(const km_kbp_action_item *action_items, int i, size_t num_actions)
+{
+    for (int j=i+1; j < num_actions; j++) {
+        if (action_items[i].type == KM_KBP_IT_BACK || action_items[i].type == KM_KBP_IT_CHAR || action_items[i].type == KM_KBP_IT_EMIT_KEYSTROKE) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
 static gboolean
 ibus_keyman_engine_process_key_event (IBusEngine     *engine,
                                     guint           keyval,
@@ -507,7 +518,7 @@ ibus_keyman_engine_process_key_event (IBusEngine     *engine,
                                     guint           state)
 {
     IBusKeymanEngine *keyman = (IBusKeymanEngine *) engine;
-    
+
     if (state & IBUS_RELEASE_MASK)
         return FALSE;
 
@@ -541,11 +552,11 @@ ibus_keyman_engine_process_key_event (IBusEngine     *engine,
     g_message("DAR: ibus_keyman_engine_process_key_event - keyval=%02i, keycode=%02i, state=%02x", keyval, keycode, state);
 
     // // Let the application handle user generated backspaces after resetting the kmfl history
-    if (keycode == Keyman_Pass_Backspace_To_IBus) {
-        //clear_history(keyman->state);
-        g_message("IBUS_BackSpace");
-        return FALSE;
-    }
+//    if (keycode == Keyman_Pass_Backspace_To_IBus) {
+//        //clear_history(keyman->state);
+//        g_message("IBUS_BackSpace");
+//        return FALSE;
+//    }
 
     if (keycode_to_vk[keycode] == 0) // key we don't handle
         return FALSE;
@@ -600,6 +611,7 @@ ibus_keyman_engine_process_key_event (IBusEngine     *engine,
         switch(action_items[i].type)
         {
             case KM_KBP_IT_CHAR:
+                g_message("CHAR action %d/%d", i+1, (int)num_action_items);
                 keyman->marker = False;
                 if (g_unichar_type(action_items[i].character) == G_UNICODE_SURROGATE) {
                     if (keyman->firstsurrogate == 0) {
@@ -628,53 +640,68 @@ ibus_keyman_engine_process_key_event (IBusEngine     *engine,
                     {
                         utf8[numbytes] = 0;
                     }
-                    g_message("CHAR action unichar:U+%04x, bytes:%d, string:%s", action_items[i].character, numbytes, utf8);
+                    g_message("CHAR action %d unichar:U+%04x, bytes:%d, string:%s", i, action_items[i].character, numbytes, utf8);
                     ibus_keyman_engine_commit_string(keyman, utf8);
                 }
                 break;
             case KM_KBP_IT_MARKER:
                 keyman->marker = True;
-                g_message("MARKER action");
+                g_message("MARKER action %d/%d", i+1, (int)num_action_items);
                 break;
             case KM_KBP_IT_ALERT:
-                g_message("ALERT action");
+                g_message("ALERT action %d/%d", i+1, (int)num_action_items);
                 Display * alert_display  = XOpenDisplay(NULL);
                 XkbBell(alert_display, None, 0, None);
                 XCloseDisplay(alert_display);
                 break;
             case KM_KBP_IT_BACK:
-                g_message("BACK action");
+                g_message("BACK action %d/%d", i+1, (int)num_action_items);
                 if (keyman->marker) {
+                    g_message("resetting marker");
                     keyman->marker = False;
                 }
                 else {
-                    g_message("DAR: ibus_keyman_engine_process_key_event - client_capabilities=%x, %x", engine->client_capabilities,  IBUS_CAP_SURROUNDING_TEXT);
+                    if (ok_for_single_backspace(action_items, i, num_action_items)) {
+                        // single backspace can be handled by ibus as normal
+                        g_message("no char actions, just single back");
+                        return FALSE;
+                    }
+                    else {
+                        g_message("DAR: ibus_keyman_engine_process_key_event - client_capabilities=%x, %x", engine->client_capabilities,  IBUS_CAP_SURROUNDING_TEXT);
 
-                    if ((engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT) != 0) {
-                        g_message("deleting surrounding text 1 char");
-                        ibus_engine_delete_surrounding_text(engine, -1, 1);
-                    } else {
-                        g_message("forwarding backspace");
-                        forward_keycode(keyman, Keyman_Pass_Backspace_To_IBus, 0);
+                        if ((engine->client_capabilities & IBUS_CAP_SURROUNDING_TEXT) != 0) {
+                            g_message("deleting surrounding text 1 char");
+                            ibus_engine_delete_surrounding_text(engine, -1, 1);
+                        } else {
+                            g_message("forwarding backspace with reset context");
+                            km_kbp_context_item *context_items;
+                            km_kbp_context_get(km_kbp_state_context(keyman->state),
+                                &context_items);
+                            reset_context(engine);
+                            forward_keysym(keyman, XK_BackSpace, 0);
+                            km_kbp_context_set(km_kbp_state_context(keyman->state),
+                                context_items);
+                            km_kbp_context_items_dispose(context_items);
+                        }
                     }
                 }
                 break;
             case KM_KBP_IT_PERSIST_OPT:
-                g_message("PERSIST_OPT action");
+                g_message("PERSIST_OPT action %d/%d", i+1, (int)num_action_items);
                 break;
             case KM_KBP_IT_EMIT_KEYSTROKE:
-                g_message("EMIT_KEYSTROKE action");
+                g_message("EMIT_KEYSTROKE action %d/%d", i+1, (int)num_action_items);
                 return False;
             case KM_KBP_IT_INVALIDATE_CONTEXT:
-                g_message("INVALIDATE_CONTEXT action");
+                g_message("INVALIDATE_CONTEXT action %d/%d", i+1, (int)num_action_items);
                 reset_context(engine);
                 break;
             case KM_KBP_IT_END:
-                g_message("END action");
+                g_message("END action %d/%d", i+1, (int)num_action_items);
                 keyman->firstsurrogate = 0;
                 break;
             default:
-                g_warning("Unknown action");
+                g_warning("Unknown action %d/%d(%d)", i+1, (int)num_action_items, action_items[i].type);
         }
     }
     return TRUE;
@@ -687,6 +714,9 @@ ibus_keyman_engine_set_surrounding_text (IBusEngine *engine,
                                             guint       anchor_pos)
 {
     g_message("ibus_keyman_engine_set_surrounding_text");
+    if (cursor_pos != anchor_pos){
+        g_message("ibus_keyman_engine_set_surrounding_text: There is a selection");
+    }
     parent_class->set_surrounding_text (engine, text, cursor_pos, anchor_pos);
     reset_context(engine);
 }
