@@ -2,16 +2,22 @@
  * Integration tests for the model compositor with the trie model.
  */
 
-import ModelCompositor from '#./model-compositor.js';
-import { toAnnotatedSuggestion } from '#./predict-helpers.js';
-import * as models from '#./models/index.js';
-import * as wordBreakers from '@keymanapp/models-wordbreakers';
-
 import { assert } from 'chai';
 
+import * as wordBreakers from '@keymanapp/models-wordbreakers';
 import { jsonFixture } from '@keymanapp/common-test-resources/model-helpers.mjs';
+import { LexicalModelTypes } from '@keymanapp/common-types';
 
-var TrieModel = models.TrieModel;
+import { ModelCompositor, models, toAnnotatedSuggestion } from '@keymanapp/lm-worker/test-index';
+
+import CasingFunction = LexicalModelTypes.CasingFunction;
+import Context = LexicalModelTypes.Context;
+import Keep = LexicalModelTypes.Keep;
+import LexicalModelPunctuation = LexicalModelTypes.LexicalModelPunctuation
+import QuoteBehavior = models.QuoteBehavior;
+import Suggestion = LexicalModelTypes.Suggestion;
+import Transform = LexicalModelTypes.Transform;
+import TrieModel = models.TrieModel;
 
 describe('ModelCompositor', function() {
   describe('Prediction with 14.0+ models', function() {
@@ -254,154 +260,6 @@ describe('ModelCompositor', function() {
       });
     });
 
-    describe('applySuggestionCasing', function() {
-      let plainApplyCasing = function(caseToApply, text) {
-        switch(caseToApply) {
-          case 'lower':
-            return text.toLowerCase();
-          case 'upper':
-            return text.toUpperCase();
-          case 'initial':
-            return plainApplyCasing('upper', text.charAt(0)) . concat(text.substring(1));
-          default:
-            return text;
-        }
-      };
-
-      var plainCasedModel = new TrieModel(
-        jsonFixture('models/tries/english-1000'), {
-          languageUsesCasing: true,
-          applyCasing: plainApplyCasing,
-          wordBreaker: wordBreakers.default,
-          searchTermToKey: function(text) {
-            // We're dealing with very simple English text; no need to normalize or remove diacritics here.
-            return applyCasing('lower', text);
-          }
-        }
-      );
-
-      it('properly cases suggestions with no suggestion root', function() {
-        var compositor = new ModelCompositor(plainCasedModel, true);
-
-        let suggestion = {
-          transform: {
-            insert: 'the',
-            deleteLeft: 0
-          },
-          displayAs: 'the'
-        };
-
-        compositor.applySuggestionCasing(suggestion, '', 'initial');
-        assert.equal(suggestion.displayAs, 'The');
-        assert.equal(suggestion.transform.insert, 'The');
-
-        suggestion = {
-          transform: {
-            insert: 'thE',
-            deleteLeft: 0
-          },
-          displayAs: 'thE'
-        };
-
-        compositor.applySuggestionCasing(suggestion, '', 'initial');
-        assert.equal(suggestion.displayAs, 'ThE');
-        assert.equal(suggestion.transform.insert, 'ThE');
-
-        suggestion = {
-          transform: {
-            insert: 'the',
-            deleteLeft: 0
-          },
-          displayAs: 'the'
-        };
-
-        compositor.applySuggestionCasing(suggestion, '', 'upper');
-        assert.equal(suggestion.displayAs, 'THE');
-        assert.equal(suggestion.transform.insert, 'THE');
-      });
-
-      it('properly cases suggestions that fully replace the suggestion root', function() {
-        var compositor = new ModelCompositor(plainCasedModel, true);
-
-        let suggestion = {
-          transform: {
-            insert: 'therefore',
-            deleteLeft: 3
-          },
-          displayAs: 'therefore'
-        };
-
-        compositor.applySuggestionCasing(suggestion, 'the', 'initial');
-        assert.equal(suggestion.displayAs, 'Therefore');
-        assert.equal(suggestion.transform.insert, 'Therefore');
-
-        suggestion = {
-          transform: {
-            insert: 'thereFore',
-            deleteLeft: 3
-          },
-          displayAs: 'thereFore'
-        };
-
-        compositor.applySuggestionCasing(suggestion, 'the', 'initial');
-        assert.equal(suggestion.displayAs, 'ThereFore');
-        assert.equal(suggestion.transform.insert, 'ThereFore');
-
-        suggestion = {
-          transform: {
-            insert: 'therefore',
-            deleteLeft: 3
-          },
-          displayAs: 'therefore'
-        };
-
-        compositor.applySuggestionCasing(suggestion, 'the', 'upper');
-        assert.equal(suggestion.displayAs, 'THEREFORE');
-        assert.equal(suggestion.transform.insert, 'THEREFORE');
-      });
-
-      it('properly cases suggestions that do not fully replace the suggestion root', function() {
-        var compositor = new ModelCompositor(plainCasedModel, true);
-
-        let suggestion = {
-          transform: {
-            insert: 'erefore',
-            deleteLeft: 1
-          },
-          displayAs: 'therefore'
-        };
-
-        // When integrated, the 'the' string comes from a wordbreak operation on the current context.
-        compositor.applySuggestionCasing(suggestion, 'the', 'initial');
-        assert.equal(suggestion.displayAs, 'Therefore');
-        assert.equal(suggestion.transform.insert, 'Therefore');
-
-        suggestion = {
-          transform: {
-            insert: 'ereFore',
-            deleteLeft: 1
-          },
-          displayAs: 'thereFore'
-        };
-
-        compositor.applySuggestionCasing(suggestion, 'the', 'initial');
-        assert.equal(suggestion.displayAs, 'ThereFore');
-        assert.equal(suggestion.transform.insert, 'ThereFore');
-
-        suggestion = {
-          transform: {
-            insert: 'erefore',
-            deleteLeft: 1
-          },
-          displayAs: 'therefore'
-        };
-
-        compositor.applySuggestionCasing(suggestion, 'the', 'upper');
-        assert.equal(suggestion.displayAs, 'THEREFORE');
-        assert.equal(suggestion.transform.insert, 'THEREFORE');
-      });
-    });
-
     describe('Model uses default-style keying, no casing', function () {
       var uncasedModel = new TrieModel(
         jsonFixture('models/tries/english-1000'), {
@@ -465,7 +323,7 @@ describe('ModelCompositor', function() {
     });
 
     describe('Model uses default-style keying, provides casing', function () {
-      let applyCasing = function(caseToApply, text) {
+      let applyCasing: CasingFunction = function(caseToApply, text) {
         switch(caseToApply) {
           case 'lower':
             return text.toLowerCase();
@@ -608,13 +466,11 @@ describe('ModelCompositor', function() {
         futureSuggestions: [
           [], [{
             transform: { insert: 'e', deleteLeft: 0 },
-            appendedTransform: { insert: ' ', deleteLeft: 0},
             displayAs: "the",
             id: 1,
             p: 0.7
           }], [{
             transform: { insert: 'ree', deleteLeft: 0},
-            appendedTransform: { insert: ' ', deleteLeft: 0},
             displayAs: "three",
             id: 2,
             p: 0.3
@@ -630,8 +486,8 @@ describe('ModelCompositor', function() {
       await compositor.predict({insert: '', deleteLeft: 0}, context);
 
       // Pretend to fat finger "the" as "thr"
-      var the = { sample: { insert: 'r', deleteLeft: 0}, p: 0.45 };
-      var thr = { sample: { insert: 'e', deleteLeft: 0}, p: 0.55 };
+      var the = { sample: { insert: 'r', deleteLeft: 0 }, p: 0.45 };
+      var thr = { sample: { insert: 'e', deleteLeft: 0 }, p: 0.55 };
       var suggestions = await compositor.predict([thr, the], context);
 
       // Get the top suggest for 'the' and 'thr*'.
@@ -654,7 +510,7 @@ describe('ModelCompositor', function() {
 
   // The nomenclature's a minor sneak-peek from child PRs.
   describe('toAnnotatedSuggestion', function() {
-    let baseSuggestion = {
+    let baseSuggestion: Suggestion = {
       transform: {
         insert: 'hello',
         deleteLeft: 0,
@@ -675,14 +531,14 @@ describe('ModelCompositor', function() {
     }
 
     describe("'keep'", function() {
-      let annotationTest = function(punctuation, displayText, quoteStyle) {
+      let annotationTest = function(punctuation: LexicalModelPunctuation, displayText: string, quoteStyle?: QuoteBehavior) {
         let options = {
           punctuation: punctuation
         };
 
         let model = new models.DummyModel(options);
 
-        var keep;
+        var keep: Keep;
         if(quoteStyle) {
           keep = toAnnotatedSuggestion(model, baseSuggestion, 'keep', quoteStyle);
         } else {
@@ -718,7 +574,7 @@ describe('ModelCompositor', function() {
   });
 
   describe('acceptSuggestion', function() {
-    let acceptanceTest = function(punctuation, suggestion, context, postTransform) {
+    let acceptanceTest = function(punctuation: LexicalModelPunctuation, suggestion: Suggestion, context: Context, postTransform?: Transform) {
       let options = {
         punctuation: punctuation
       };
@@ -906,12 +762,6 @@ describe('ModelCompositor', function() {
   });
 
   describe('acceptReversion', function() {
-    let executeAcceptance = function(model, suggestion, context, postTransform) {
-      let compositor = new ModelCompositor(model, true);
-
-      return {compositor: compositor, reversion: compositor.acceptSuggestion(suggestion, context, postTransform)};
-    }
-
     let englishPunctuation = {
       quotesForKeepSuggestion: { open: `“`, close: `”`},
       insertAfterWord: ' '
